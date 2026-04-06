@@ -1,4 +1,4 @@
-name: Ultimate Noto Archive Final Fix
+name: Ultimate Noto Archive Final Optimized
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
 
-      - name: Setup and Collect
+      - name: Setup and Collect Fonts
         run: |
           # ১. ডিরেক্টরি তৈরি
           mkdir -p Non-CJK CJK Emoji
@@ -37,30 +37,30 @@ jobs:
                      "$target_base/otf-static" "$target_base/otf-static-slim" \
                      "$target_base/otf-variable" "$target_base/otf-variable-slim"
 
-            # রিকার্সিভলি ফন্ট খুঁজে বের করা (যাতে কোনো সাব-ফোল্ডারে থাকলেও পাওয়া যায়)
+            # রিকার্সিভলি ফন্ট খুঁজে বের করা
             find "$src_dir" -type f \( -iname "*.ttf" -o -iname "*.otf" \) | while read -r file; do
               filename=$(basename "$file")
-              ext="${filename##*.}"
-              ext_l=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+              ext_l="${filename##*.}"
+              ext_l=$(echo "$ext_l" | tr '[:upper:]' '[:lower:]')
               
               is_var=false
               [[ "$filename" == *"Variable"* || "$filename" == *"["* ]] && is_var=true
 
               if [ "$ext_l" = "ttf" ]; then
                 if [ "$is_var" = true ]; then
-                  cp -n "$file" "$target_base/ttf-variable/"
-                  cp -n "$file" "$target_base/ttf-variable-slim/"
+                  cp --update=none "$file" "$target_base/ttf-variable/"
+                  cp --update=none "$file" "$target_base/ttf-variable-slim/"
                 else
-                  cp -n "$file" "$target_base/ttf-static/"
-                  [[ "$filename" =~ (Regular|Bold)\.ttf$ ]] && cp -n "$file" "$target_base/ttf-static-slim/"
+                  cp --update=none "$file" "$target_base/ttf-static/"
+                  [[ "$filename" =~ (Regular|Bold)\.ttf$ ]] && cp --update=none "$file" "$target_base/ttf-static-slim/"
                 fi
               elif [ "$ext_l" = "otf" ]; then
                 if [ "$is_var" = true ]; then
-                  cp -n "$file" "$target_base/otf-variable/"
-                  cp -n "$file" "$target_base/otf-variable-slim/"
+                  cp --update=none "$file" "$target_base/otf-variable/"
+                  cp --update=none "$file" "$target_base/otf-variable-slim/"
                 else
-                  cp -n "$file" "$target_base/otf-static/"
-                  [[ "$filename" =~ (Regular|Bold)\.otf$ ]] && cp -n "$file" "$target_base/otf-static-slim/"
+                  cp --update=none "$file" "$target_base/otf-static/"
+                  [[ "$filename" =~ (Regular|Bold)\.otf$ ]] && cp --update=none "$file" "$target_base/otf-static-slim/"
                 fi
               fi
             done
@@ -79,6 +79,7 @@ jobs:
               f_src="$script_path"
             fi
 
+            # ক্যাটাগরি ম্যাপিং (CJK এবং Emoji এর জন্য সঠিক কীওয়ার্ড চেক)
             if [[ "$s_name" == *"cjk"* ]]; then
               process_fonts "$f_src" "CJK"
             elif [[ "$s_name" == *"emoji"* ]]; then
@@ -88,12 +89,15 @@ jobs:
             fi
           done
 
+          # ৫. ডিস্ক খালি করতে সোর্স ডিলিট
+          rm -rf source
+
       - name: Create Zip Archives
         run: |
-          # যদি ফোল্ডারে ফাইল থাকে তবেই জিপ করবে, নয়তো এরর দেবে না
-          [ "$(ls -A Non-CJK/ttf-static)" ] && (cd Non-CJK && zip -r ../Noto_Non-CJK.zip .) || echo "Non-CJK empty"
-          [ "$(ls -A CJK/ttf-static)" ] && (cd CJK && zip -r ../Noto_CJK.zip .) || echo "CJK empty"
-          [ "$(ls -A Emoji/ttf-static)" ] && (cd Emoji && zip -r ../Noto_Emoji.zip .) || echo "Emoji empty"
+          # প্রতিটি ফোল্ডারের জন্য জিপ তৈরি (যদি ফোল্ডার খালি না থাকে)
+          [ "$(find Non-CJK -type f | head -n 1)" ] && (cd Non-CJK && zip -r ../Noto_Non-CJK.zip .) || echo "Non-CJK empty"
+          [ "$(find CJK -type f | head -n 1)" ] && (cd CJK && zip -r ../Noto_CJK.zip .) || echo "CJK empty"
+          [ "$(find Emoji -type f | head -n 1)" ] && (cd Emoji && zip -r ../Noto_Emoji.zip .) || echo "Emoji empty"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
@@ -101,8 +105,8 @@ jobs:
           tag_name: "v${{ github.run_number }}"
           name: "Ultimate Noto Archive - $(date +'%d-%m-%Y')"
           files: |
-            Noto_Non-CJK.zip
-            Noto_CJK.zip
-            Noto_Emoji.zip
+             Noto_Non-CJK.zip
+             Noto_CJK.zip
+             Noto_Emoji.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
