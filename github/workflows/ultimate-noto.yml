@@ -1,0 +1,110 @@
+name: Ultimate Noto Archive (Full/Hinted)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup and Collect Fonts
+        run: |
+          # ১. ৩টি ক্যাটাগরির জন্য বেস ডিরেক্টরি তৈরি
+          mkdir -p Non-CJK CJK Emoji
+          
+          # ২. সোর্স ক্লোন করা
+          git clone --depth 1 https://github.com/notofonts/notofonts.github.io.git source
+
+          # ৩. প্রসেসিং ফাংশন
+          process_fonts() {
+            local src_dir=$1
+            local target_base=$2
+
+            # আপনার চাওয়া ৮টি সাব-ফোল্ডার স্ট্রাকচার
+            mkdir -p "$target_base/ttf-static" "$target_base/ttf-static-slim" \
+                     "$target_base/ttf-variable" "$target_base/ttf-variable-slim" \
+                     "$target_base/otf-static" "$target_base/otf-static-slim" \
+                     "$target_base/otf-variable" "$target_base/otf-variable-slim"
+
+            # ফাইল খোঁজা (TTF এবং OTF)
+            find "$src_dir" -maxdepth 1 -type f \( -iname "*.ttf" -o -iname "*.otf" \) | while read -r file; do
+              filename=$(basename "$file")
+              ext="${filename##*.}"
+              ext_lower=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+              
+              is_var=false
+              [[ "$filename" == *"Variable"* || "$filename" == *"["* ]] && is_var=true
+
+              if [ "$ext_lower" = "ttf" ]; then
+                if [ "$is_var" = true ]; then
+                  cp -n "$file" "$target_base/ttf-variable/"
+                  cp -n "$file" "$target_base/ttf-variable-slim/"
+                else
+                  cp -n "$file" "$target_base/ttf-static/"
+                  [[ "$filename" =~ (Regular|Bold)\.ttf$ ]] && cp -n "$file" "$target_base/ttf-static-slim/"
+                fi
+              elif [ "$ext_lower" = "otf" ]; then
+                if [ "$is_var" = true ]; then
+                  cp -n "$file" "$target_base/otf-variable/"
+                  cp -n "$file" "$target_base/otf-variable-slim/"
+                else
+                  cp -n "$file" "$target_base/otf-static/"
+                  [[ "$filename" =~ (Regular|Bold)\.otf$ ]] && cp -n "$file" "$target_base/otf-static-slim/"
+                fi
+              fi
+            done
+          }
+
+          # ৪. সোর্স ফোল্ডার স্ক্যান লজিক
+          find source/fonts -maxdepth 1 -type d ! -path "source/fonts" | while read -r script_path; do
+            script_name=$(basename "$script_path")
+            
+            # অগ্রাধিকার: Full > Hinted
+            if [ -d "$script_path/full" ]; then
+              final_src="$script_path/full"
+            elif [ -d "$script_path/hinted" ]; then
+              final_src="$script_path/hinted"
+            else
+              continue
+            fi
+
+            # ক্যাটাগরি ম্যাপিং
+            if [[ "$script_name" == *"cjk"* ]]; then
+              process_fonts "$final_src" "CJK"
+            elif [[ "$script_name" == *"emoji"* ]]; then
+              # ইমোজি ফোল্ডারে কালার ও মনোক্রোম দুটোই প্রসেস হবে
+              process_fonts "$final_src" "Emoji"
+            else
+              process_fonts "$final_src" "Non-CJK"
+            fi
+          done
+
+      - name: Create Zip Archives
+        run: |
+          # জিপ করার সময় -j ব্যবহার না করে ক্যাটাগরি ফোল্ডারের ভেতর থেকে জিপ করা হচ্ছে 
+          # যাতে জিপের ভেতরে সরাসরি ৮টি সাব-ফোল্ডার থাকে
+          cd Non-CJK && zip -r ../Noto_Non-CJK_Archive.zip . && cd ..
+          cd CJK && zip -r ../Noto_CJK_Archive.zip . && cd ..
+          cd Emoji && zip -r ../Noto_Emoji_Archive.zip . && cd ..
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.run_number }}"
+          name: "Ultimate Noto Fonts - $(date +'%d-%m-%Y')"
+          body: |
+            পূর্ণাঙ্গ নটো ফন্ট আর্কাইভ (রঙিন ও মনোক্রোম ইমোজি সহ)।
+            - জিপ ফাইলগুলোতে সরাসরি ৮টি ক্যাটাগরি ফোল্ডার পাওয়া যাবে।
+            - ডাটা সোর্স: notofonts.github.io (Full or Hinted).
+          files: |
+            Noto_Non-CJK_Archive.zip
+            Noto_CJK_Archive.zip
+            Noto_Emoji_Archive.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
