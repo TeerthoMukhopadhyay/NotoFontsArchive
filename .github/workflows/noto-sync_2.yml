@@ -1,0 +1,66 @@
+name: Noto Fonts Collector
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Collect All Fonts
+        run: |
+          mkdir -p all_noto_fonts
+          
+          # সোর্স ক্লোন করা
+          git clone --depth 1 https://github.com/notofonts/notofonts.github.io.git source
+          
+          # ফন্ট ফোল্ডারের ভেতর প্রবেশ করে চেক করা
+          cd source/fonts
+          
+          for font_folder in *; do
+            # ফোল্ডার কি না চেক করা
+            if [ -d "$font_folder" ]; then
+              SRC=""
+              # আগে 'full' চেক করবে, না থাকলে 'hinted'
+              if [ -d "$font_folder/full" ]; then
+                SRC="$font_folder/full"
+              elif [ -d "$font_folder/hinted" ]; then
+                SRC="$font_folder/hinted"
+              fi
+              
+              if [ ! -z "$SRC" ]; then
+                echo "Processing: $font_folder from $SRC"
+                # Regular ও Bold ফাইল কপি করা (কেস সেনসিটিভ হতে পারে তাই নাম চেক)
+                find "$SRC" -maxdepth 1 -type f \( -iname "*regular.ttf" -o -iname "*bold.ttf" -o -iname "*regular.otf" -o -iname "*bold.otf" \) -exec cp -v {} ../../all_noto_fonts/ \;
+              fi
+            fi
+          done
+          
+          cd ../../
+          # চেক করা ফাইল কপি হয়েছে কি না
+          ls -lh all_noto_fonts/ | head -n 20
+
+      - name: Create Zip Archive
+        run: |
+          # যদি ফোল্ডার খালি না থাকে তবেই জিপ করবে
+          if [ "$(ls -A all_noto_fonts)" ]; then
+            zip -r noto_fonts_collection.zip all_noto_fonts/
+          else
+            echo "Error: No fonts collected!" && exit 1
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: "v${{ github.run_number }}"
+          name: "Noto Fonts Collection - $(date +'%d-%m-%Y')"
+          files: noto_fonts_collection.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
