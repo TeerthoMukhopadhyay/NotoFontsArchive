@@ -1,0 +1,59 @@
+name: Noto Fonts Collector
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Collect All Fonts into One Folder
+        run: |
+          # ১. সব ফন্ট রাখার জন্য একটি মূল ফোল্ডার তৈরি
+          mkdir -p all_noto_fonts
+          
+          # ২. সোর্স ডাটা ক্লোন করা
+          git clone --depth 1 https://github.com/notofonts/notofonts.github.io.git source
+          
+          # ৩. লুপ চালিয়ে ফাইল সংগ্রহ
+          cd source/fonts
+          for font_folder in *; do
+            # Full থাকলে সেটা নিবে, না থাকলে Hinted
+            if [ -d "$font_folder/full" ]; then
+              SRC="$font_folder/full"
+            elif [ -d "$font_folder/hinted" ]; then
+              SRC="$font_folder/hinted"
+            else
+              continue
+            fi
+            
+            # শুধুমাত্র Regular ও Bold ফাইলগুলো কপি করে 'all_noto_fonts' এ রাখা
+            # এখানে -n ফ্ল্যাগ ব্যবহার করা হয়েছে যাতে একই নামের ফাইল ওভাররাইট না হয়
+            find "$SRC" -maxdepth 1 -type f \( -name "*Regular.ttf" -o -name "*Bold.ttf" -o -name "*Regular.otf" -o -name "*Bold.otf" \) -exec cp -n {} ../../all_noto_fonts/ \;
+          done
+          cd ../../
+
+      - name: Create Zip Archive
+        run: |
+          # সব ফন্টকে একটি জিপ ফাইলে ভরা যাতে ডাউনলোড করা সহজ হয়
+          zip -r noto_fonts_collection.zip all_noto_fonts/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.run_number }}"
+          name: "Noto Fonts Collection - $(date +'%d-%m-%Y')"
+          body: |
+            সবগুলো নটো ফন্টের Regular এবং Bold ভার্সন এখানে পাওয়া যাবে। 
+            - ফোল্ডার থেকে ফাইল সরাসরি আপলোড করা হয়েছে।
+            - ডাউনলোড করতে নিচে দেওয়া `noto_fonts_collection.zip` ফাইলে ক্লিক করুন।
+          files: |
+            noto_fonts_collection.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
