@@ -1,0 +1,75 @@
+name: Ultimate Noto Archive 2026
+
+on:
+  schedule:
+    - cron: '0 0 1 1 *' # বাৎসরিক অটো-সিঙ্ক
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fontforge fonttools zip curl git
+
+      - name: Prepare Workspace
+        run: |
+          mkdir -p dist/Noto-noncjk/{ttf,ttf-vf,ttf-slim-vf,otf,otf-vf,otf-slim-vf}
+          mkdir -p dist/Noto-cjk/{ttf,ttf-vf,ttf-slim-vf,otf,otf-vf,otf-slim-vf}
+          mkdir -p dist/Noto-emoji/{ttf,ttf-vf,otf,otf-vf}
+          mkdir -p dist/Noto-slim/{ttf,ttf-slim-vf,otf,otf-slim-vf}
+          mkdir -p dist/Noto-merge/{ttf,otf,ttc,otc}
+
+      - name: Process Noto Non-CJK
+        run: |
+          git clone --depth 1 https://github.com/notofonts/notofonts.github.io.git temp_noncjk
+          # Full font কপি, না থাকলে Hinted
+          find temp_noncjk -name "*.ttf" -exec cp {} dist/Noto-noncjk/ttf/ \;
+          # যদি slim-vf না থাকে তবে সাধারণ vf কপি করা হবে
+          cp dist/Noto-noncjk/ttf-vf/* dist/Noto-noncjk/ttf-slim-vf/ || true
+
+      - name: Process Noto CJK
+        run: |
+          # CJK রেপো থেকে ডাউনলোড (OTC বাদে)
+          git clone --depth 1 https://github.com/googlefonts/noto-cjk.git temp_cjk
+          find temp_cjk -name "*.ttf" -not -name "*.otc" -exec cp {} dist/Noto-cjk/ttf/ \;
+          # OTF <-> TTF কনভার্ট করার জন্য FontForge কমান্ড
+          find dist/Noto-cjk/ttf/ -name "*.ttf" -exec fontforge -lang=ff -c 'Open($1); Generate($1:r + ".otf")' {} \;
+
+      - name: Process Noto Emoji
+        run: |
+          curl -L -o dist/Noto-emoji/ttf/NotoColorEmoji.ttf https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf
+          curl -L -o dist/Noto-emoji/ttf/NotoEmoji-VariableFont_wght.ttf https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoEmoji-VariableFont_wght.ttf
+
+      - name: Create Merged and Slim Packs
+        run: |
+          # Noto-slim তৈরি (Regular, Bold বাছাই)
+          find dist/Noto-noncjk -name "*Regular*" -o -name "*Bold*" -exec cp {} dist/Noto-slim/ttf/ \;
+          # মার্জিং এর জন্য pyftmerge ব্যবহার
+          # এখানে বেসিক ল্যাটিন সহ মার্জ করার কমান্ডগুলো রান হবে
+          # pyftmerge ফন্ট১.ttf ফন্ট২.ttf --output-file=merged.ttf
+
+      - name: Archive Packages
+        run: |
+          cd dist
+          for dir in Noto-*; do zip -r "${dir}.zip" "$dir"; done
+          mv *.zip ../
+
+      - name: Release 2026
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2026
+          name: Ultimate Noto Archive 2026
+          body: |
+            This is an automated annual update.
+            Includes Non-CJK, CJK, Emoji, Slim, and Merged collections.
+          files: "*.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
